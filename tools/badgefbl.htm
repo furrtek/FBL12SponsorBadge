@@ -1,0 +1,393 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<style>
+body, input, select {
+	font-family:"Trebuchet MS", Arial, Helvetica, sans-serif;	
+}
+body {
+	font-size:20pt;
+	padding:30px;
+	color:#FFF;
+	background:linear-gradient(#D8F, #42F);
+	background-attachment: fixed;
+}
+button {
+	font-size:20pt;
+	padding:10px;
+}
+input, select {
+	font-size:20pt;
+	padding:10px;
+}
+.param {
+	background:#0005;
+	padding:10px;
+	margin:10px;
+}
+</style>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<title>Badge</title>
+</head>
+
+<script>
+	// On se moque pas !
+	
+	var connected = false;
+	
+	let species_lut = [
+		["NULL", 0],
+		["ALIEN", 1],
+		["ANE/DONKEY", 22],
+		["AVALI", 2],
+		["AVIAIRE/AVIAN", 3],
+		["BICHE/DEER", 18],
+		["BLAIREAU/BADGER", 4],
+		["CAMELEON/CHAMELEON", 12],
+		["CANARD/DUCK", 24],
+		["CARACAL", 9],
+		["CARIBOU", 10],
+		["CHACAL/JACKAL", 38],
+		["CHAT/CAT", 11],
+		["CHAUVE SOURIS/BAT", 5],
+		["CHEVAL/HORSE", 33],
+		["CHEVRE/GOAT", 30],
+		["CHIEN/DOG", 21],
+		["CHIEN VIVERRIN/RACCOON DOG", 64],
+		["CITRA", 14],
+		["COYOTE", 16],
+		["CROCODILE", 17],
+		["DIGIMON", 19],
+		["DINOSAURE/DINOSAUR", 20],
+		["DRAGON", 23],
+		["ECUREUIL/SQUIRREL", 74],
+		["ELEPHANT", 25],
+		["FAUN", 26],
+		["FURET/FERRET", 27],
+		["GRYPHON", 32],
+		["GUEPARD/CHEETAH", 13],
+		["HERISSON/PORCUPINE", 59],
+		["HUMAIN/HUMAN", 34],
+		["HYENE/HYENA", 35],
+		["IGUANE/IGUANA", 36],
+		["INSECTE/INSECT", 37],
+		["JACKALOPE", 39],
+		["KANGOUROU/KANGAROO", 40],
+		["KOBOLD", 41],
+		["LAPIN/RABBIT", 62],
+		["LEOPARD DES NEIGES/SNEP", 76],
+		["LEZARD/LIZARD", 43],
+		["LICORNE/UNICORN", 81],
+		["LION", 42],
+		["LOUP/WOLF", 83],
+		["LOUTRE/OTTER", 54],
+		["LYNX", 44],
+		["MANCHOT/PENGUIN", 56],
+		["MANED WOLF", 45],
+		["MANOKIT", 46],
+		["MARTRE/MARTEN", 47],
+		["MINOTAUR", 49],
+		["MONSTRE/MONSTER", 50],
+		["MOUFFETTE/SKUNK", 73],
+		["MOUTON/SHEEP", 72],
+		["OCELOT", 52],
+		["OIE/GOOSE", 31],
+		["ORQUE/ORCA", 53],
+		["OURS/BEAR", 6],
+		["PANDA", 55],
+		["PANDA ROUX/RED PANDA", 66],
+		["PHOENIX", 57],
+		["PHOQUE/SEAL", 69],
+		["POISSON/FISH", 28],
+		["POKEMON", 58],
+		["PRIMATE", 60],
+		["PROTOGEN", 61],
+		["RAT", 65],
+		["RATON LAVEUR/RACCOON", 63],
+		["RENARD/FOX", 29],
+		["REQUIN/SHARK", 71],
+		["RHINO", 67],
+		["RONGEUR/RODENT", 68],
+		["SANGLIER/BOAR", 7],
+		["SERGAL", 70],
+		["SERPENT/SNAKE", 75],
+		["SOURIS/MOUSE", 51],
+		["SURICATE/MEERKAT", 48],
+		["SYNTH", 77],
+		["TAUR", 78],
+		["TAUREAU/BULL", 8],
+		["TAUREN", 79],
+		["TIGRE/TIGER", 80],
+		["VACHE/COW", 15],
+		["WERE", 82],
+		["YOSHI", 84],
+		["ZEBRE/ZEBRA", 85],
+	];
+	
+	function setConnected(state) {
+		connected = state;
+		const statusTxt = document.getElementById('statustxt');
+		const btnConnect = document.getElementById('btn_connect');
+		if (state) {
+			statusTxt.innerHTML = "Connect&eacute; :)";
+			statusTxt.style.color = "lightgreen";
+			btnConnect.style.display = "none";
+		} else {
+			statusTxt.innerHTML = "Deconnect&eacute; :(";
+			statusTxt.style.color = "red";
+			btnConnect.style.display = 'block';
+		}
+		
+		var elements = document.getElementsByClassName("conditional");
+		
+		// Enable/disable controls depending on connection status
+		for (var i = 0; i < elements.length; i++)
+			elements[i].disabled = !state;
+	}
+	
+	async function serialRead(port) {
+		// Read from serial port with 2s timeout
+		const reader = port.readable.getReader();
+		const decoder = new TextDecoder();
+		
+		const timer = setTimeout(() => {reader.releaseLock()}, 2000)
+		try {
+			const { value, done } = await reader.read();
+			return decoder.decode(value);
+		} finally {
+			clearTimeout(timer)
+		}
+	}
+	
+	async function serialWrite(port, ba) {
+		// Write to serial port
+		const writer = port.writable.getWriter();
+		await writer.write(ba);
+		writer.releaseLock();
+	}
+	
+	async function transmit(cmd, params) {
+		// Insert length and checksum bytes
+		frame = new Uint8Array(params.length + 3);
+		frame[0] = cmd;
+		frame[1] = params.length;
+		frame.set(params, 2);
+		
+		// Checksum
+		var sum = frame[0] + frame[1];
+		for (i = 0; i < params.length; i++)
+			sum += params[i];
+		frame[frame.length - 1] = sum & 255;
+		
+		console.log(frame);	// DEBUG
+		
+		// Manchester-encode bytes to symbols
+		symbols = [];
+		for (i = 0; i < frame.length; i++) {
+			by = frame[i];
+			symbols.push(1, 1, 1, 1);		// Byte header
+			for (bi = 0; bi < 8; bi++) {
+				if ((by << bi) & 0x80)
+					symbols.push(0, 1);
+				else
+					symbols.push(1, 0);
+			}
+			symbols.push(0, 0);  			// Space
+		}
+		
+		// Symbols to bytes
+		coded = [];
+		bitcount = 0;
+		byte = 0;
+		for (i = 0; i < symbols.length; i++) {
+			byte = (byte << 1) | symbols[i];
+		
+			if (bitcount == 7) {
+				bitcount = 0;
+				coded.push(byte);
+				byte = 0;
+			} else
+				bitcount++;
+		}
+		
+		if (bitcount)
+			coded.push(byte << (8 - bitcount));
+				
+		data_size = coded.length;
+		carrier = 38000;
+		baudrate = 1898;
+
+		repeats = 4;
+		repeats |= 0x4000;	// Raw mode
+	
+		// Compose ESL Blaster frame
+		ba = new Uint8Array(9 + data_size + 1);
+		ba.set([
+			76,	// L:Load
+			data_size + 4,	// Raw mode parameters
+			100,  // Number of symbols between repeats
+			repeats & 255, repeats >> 8,
+			carrier & 255, carrier >> 8,
+			baudrate & 255, baudrate >> 8
+		]);
+		ba.set(coded, 9);
+		ba[9 + data_size] = 84;	// T:Transmit
+	
+		console.log(coded);	// DEBUG
+		console.log(ba);	// DEBUG
+	
+		serialWrite(port, ba.buffer);
+		
+		console.log("Transmit ok");
+	}
+	
+	function transmitName() {
+		name = document.getElementById('field_name').value.trim();
+		
+		// Non-zero char_lut[] entries in badge firmware
+		if ((name == "") || (name.match("[^0-9a-zA-Z\[\]\\_@<>/]"))) {
+			alert("Nom invalide. Caractères acceptés: A-Z 0-9 <>[]\/_@");
+			return;
+		}
+		
+		name = name.toUpperCase();
+		console.log(name);	// DEBUG
+		
+		const encoder = new TextEncoder();
+		transmit(0x2D, encoder.encode(name));	// IR_CMD_SETNAME
+	}
+
+	function transmitID() {
+		id = document.getElementById('field_id').value;
+		
+		if ((isNaN(id)) || (id == "")) {
+			alert("Numéro invalide.");
+			return;
+		}
+		
+		id = parseInt(id);
+		console.log(id);	// DEBUG
+		
+		ba = new Uint8Array([id & 255, id >> 8]);
+		transmit(0x1E, ba);	// IR_CMD_SETID
+	}
+	
+	function transmitSpecies() {
+		species_a = document.getElementById('list_speciesa').value;
+		species_b = document.getElementById('list_speciesb').value;
+		
+		console.log(species_a + " " + species_b);	// DEBUG
+		
+		ba = new Uint8Array([species_a, species_b]);
+		transmit(0x3C, ba);	// IR_CMD_SETSPECIES
+	}
+	
+	async function connect() {
+		const filters = [
+		  { usbVendorId: 0x0483, usbProductId: 0x5740 }
+		];
+
+		//const button = document.getElementById('btn_connect');
+		//button.addEventListener('click', async function() {
+		const ports = await navigator.serial.getPorts({filters});
+		//console.log(ports.length);
+		//if ((ports.length == 0) || (ports.length > 1))
+			port = await navigator.serial.requestPort();
+		//else
+		//	port = ports[0];
+		const encoder = new TextEncoder();
+		
+		await port.open({baudRate:57600});
+		
+		const writer = port.writable.getWriter();
+		const data = encoder.encode("?");	//new Uint8Array(['?', '\n']);
+		await writer.write(data);
+		writer.releaseLock();
+		
+		console.log(await serialRead(port));
+	
+		setConnected(true);
+	}
+
+	document.addEventListener("DOMContentLoaded", async (event) => {
+		setConnected(false);
+		
+		const listSpeciesA = document.getElementById('list_speciesa');
+		const listSpeciesB = document.getElementById('list_speciesb');
+		for (i = 0; i < species_lut.length; i++) {
+			var el = document.createElement("option");
+			el.textContent = species_lut[i][0];
+			el.value = species_lut[i][1];
+			listSpeciesA.appendChild(el);
+			var el = document.createElement("option");
+			el.textContent = species_lut[i][0];
+			el.value = species_lut[i][1];
+			listSpeciesB.appendChild(el);
+		}
+		
+		const notSupported = document.getElementById('notSupported');
+		if ("serial" in navigator) {
+			notSupported.style.display = 'none';
+			
+			navigator.serial.addEventListener("disconnect", (event) => {
+				console.log("Disconnected device :(");
+				setConnected(false);
+			});
+			navigator.serial.addEventListener("connect", (event) => {
+				console.log("Connected device :D");
+				//if (connected == false) connect();	// Chrome doesn't allow this for security reasons
+			});
+		
+			document.getElementById('btn_connect').addEventListener('click', async () => {
+				connect();
+			});
+			document.getElementById('btn_name').addEventListener('click', async () => {
+				transmitName();
+			});
+			document.getElementById('btn_id').addEventListener('click', async () => {
+				transmitID();
+			});
+			document.getElementById('btn_species').addEventListener('click', async () => {
+				transmitSpecies();
+			});
+		} else
+			notSupported.style.display = 'block';
+	});
+</script>
+
+<body>
+<div style="float:right;color:red;text-align:right;" id="status">
+	<div id="statustxt"></div>
+	<button type="button" id="btn_connect">Connection</button>
+</div>
+<h1>Configurateur badge FBL 12</h1>
+<div id="notSupported" style="color:red;background-color:#FCC;padding:16px;border:3px red solid;">Navigateur incompatible :(<br />
+Utilisez une copie hors-ligne de cette page dans une version r&eacute;cente de Chrome, Edge, ou Safari.</div>
+<div style="color:black;font-size:12pt;background:#FFFF99;border:1px dotted black;padding:4px;">
+<b>Mode d'emploi</b><br/>
+<p>Brancher le dongle USB, cliquer sur Connection, choisir la premi&egrave;re entr&eacute;e dans la liste.</p>
+<p>Garder un doigt sur le nez du badge, mettre le badge en face du dongle USB, et cliquer sur &quot;Transmettre&quot;.</p>
+Le badge bipera et affichera les nouvelles infos si la programmation a r&eacute;ussi.
+</div>
+<div class="param">Nom (max 16 caracteres):
+  <input name="field_name" type="text" id="field_name" maxlength="16" class="conditional"/>
+  <button type="button" id="btn_name" class="conditional">Transmettre</button>
+</div>
+<div class="param">Num&eacute;ro:
+  <input name="field_id" type="text" id="field_id" maxlength="3" size="3" class="conditional"/>
+  <button type="button" id="btn_id" class="conditional">Transmettre</button>
+</div>
+<div class="param">
+Esp&egrave;ce A:
+  <select name="list_speciesa" id="list_speciesa"  class="conditional">
+  </select>
+<br/>
+Esp&egrave;ce B:
+  <select name="list_speciesb" id="list_speciesb"  class="conditional">
+  </select>
+  <button type="button" id="btn_species" class="conditional">Transmettre</button>
+</div>
+<p style="position:fixed;bottom:10px;font-size:14pt;color:#AAA;">Assistance: Telegram @furrtek / furrtek@gmail.com</p>
+<p style="position:fixed;bottom:10px;right:30px;font-size:14pt;color:#777;">V121024-1</p>
+</body>
+</html>
